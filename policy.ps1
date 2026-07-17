@@ -38,7 +38,6 @@ function Wait-ForEnter {
     while ($true){ if ([Console]::KeyAvailable){ if ([Console]::ReadKey($true).Key -eq 'Enter'){ break } } Start-Sleep -Milliseconds 100 }
 }
 
-# Fast signature check: cached + no network revocation lookup.
 $SigCache = @{}
 function Fast-SigValid { param([string]$Path)
     if (-not $Path) { return $true }
@@ -75,19 +74,18 @@ function Write-Section {
 }
 
 $Flagged = @('software.exe','tiworker.exe','loader.exe','injector.exe','bamparser.exe','svhost.exe','csrss32.exe')
-$TiOk = @('\windows\system32\','\winsxs\','\servicing\')
+
 function Test-Flagged { param([string]$P)
     if (-not $P) { return $false }
     $leaf = try { (Split-Path $P -Leaf).ToLower() } catch { $P.ToLower() }
     foreach ($f in $Flagged){
         if ($leaf -eq $f){
             if ($f -eq 'tiworker.exe'){
-                if (-not (Test-Path $P -ErrorAction SilentlyContinue)){ return $true }
-                $lp=$P.ToLower(); $inSys=$false
-                foreach ($s in $TiOk){ if ($lp -like "*$s*"){ $inSys=$true; break } }
-                if (-not $inSys){ return $true }
-                if (-not (Fast-SigMicrosoft $P)){ return $true }
-                return $false
+                # TiWorker can only be judged from a real file we can signature-check.
+                # Name-only hits (Prefetch/ShimCache/BAM) can't be verified -> don't flag.
+                if (-not (Test-Path $P -ErrorAction SilentlyContinue)){ return $false }
+                if (Fast-SigMicrosoft $P){ return $false }   # genuine, Microsoft-signed
+                return $true                                  # real file, not MS-signed = suspicious
             }
             return $true
         }
@@ -166,7 +164,7 @@ if (Test-Path $pfDir){
 try {
     $blob=(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\AppCompatCache' -Name AppCompatCache -ErrorAction Stop).AppCompatCache
     $txt=[Text.Encoding]::Unicode.GetString($blob); $scHit=0
-    foreach ($f in $Flagged){ if ($txt -match [regex]::Escape($f)){ $scHit++; Note $FAIL "ShimCache references $f" } }
+    foreach ($f in $Flagged){ if ($f -eq 'tiworker.exe'){ continue }; if ($txt -match [regex]::Escape($f)){ $scHit++; Note $FAIL "ShimCache references $f" } }
     if ($scHit -eq 0){ Note $PASS "ShimCache: $([int]($blob.Length/1KB))KB swept, no flagged names." }
 } catch { Note $WARN "ShimCache could not read AppCompatCache." }
 
