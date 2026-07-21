@@ -19,18 +19,17 @@ if (-not $IsAdmin) {
 $PASS='Pass'; $WARN='Unsure'; $FAIL='Fail'
 function Line { param([string]$T,[ConsoleColor]$C='White') Write-Host $T -ForegroundColor $C }
 
-$Users = @{
-    'owner'     = 'unknown'
-    'dieshire'     = 'daddy'
-    'cearful' = 'son'
-}
+$Users = @{}
+$Users['owner']    = 'unknown'
+$Users['dieshire'] = 'daddy'
+$Users['cearful']  = 'son'
 
 function Get-HWID {
     try { $u = (Get-CimInstance Win32_ComputerSystemProduct -ErrorAction Stop).UUID } catch { $u = $null }
     if (-not $u -or $u -eq 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF'){
         try { $u = (Get-CimInstance Win32_BIOS).SerialNumber } catch { $u = 'UNKNOWN' }
     }
-    return $u
+    return "$u".Trim()
 }
 
 $hwid = Get-HWID
@@ -51,9 +50,8 @@ Line ""
 
 $authed = $false
 for ($tryN=1; $tryN -le 3; $tryN++){
-    $u = Read-Host "Username"
-    $pSecure = Read-Host "Password" -AsSecureString
-    $p = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pSecure))
+    $u = (Read-Host "Username").Trim()
+    $p = (Read-Host "Password").Trim()
     if (-not $Users.ContainsKey($u) -or $Users[$u] -ne $p){
         Line "Invalid username or password. ($tryN/3)" Red; Write-Host ""
         continue
