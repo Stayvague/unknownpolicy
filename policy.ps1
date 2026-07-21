@@ -33,7 +33,7 @@ function Get-HWID {
 }
 
 $hwid = Get-HWID
-$lockFile = Join-Path $env:ProgramData 'unknown_hwid.json'
+$lockFile = Join-Path $env:ProgramData 'dominatus_hwid.json'
 
 $locks = @{}
 if (Test-Path $lockFile){
@@ -45,7 +45,7 @@ function Save-Locks { param($tbl,$path)
 
 Clear-Host
 Line ""
-Line "=== unknown Recording Policy - Login ===" Yellow
+Line "=== Dominatus Recording Policy - Login ===" Yellow
 Line ""
 
 $authed = $false
@@ -141,7 +141,7 @@ function Test-Flagged { param([string]$P)
     return $false }
 
 Line ""
-Line "=== unknown Recording Policy ===" Yellow
+Line "=== Dominatus Recording Policy ===" Yellow
 Line "Complete all steps with 100% success to pass." White
 Line "Follow the instructions listed on each step." White
 Line "This PowerShell policy currently has 3 steps." White
