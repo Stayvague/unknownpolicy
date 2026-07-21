@@ -1,7 +1,4 @@
 #Requires -Version 5.0
-<#
-    unknown - Recording Policy
-#>
 
 $IsAdmin = ([Security.Principal.WindowsPrincipal] `
     [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -22,6 +19,68 @@ if (-not $IsAdmin) {
 $PASS='Pass'; $WARN='Unsure'; $FAIL='Fail'
 function Line { param([string]$T,[ConsoleColor]$C='White') Write-Host $T -ForegroundColor $C }
 
+$Users = @{
+    'user1'     = 'pass1'
+    'user2'     = 'pass2'
+    'stayvague' = 'changeme'
+}
+
+function Get-HWID {
+    try { $u = (Get-CimInstance Win32_ComputerSystemProduct -ErrorAction Stop).UUID } catch { $u = $null }
+    if (-not $u -or $u -eq 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF'){
+        try { $u = (Get-CimInstance Win32_BIOS).SerialNumber } catch { $u = 'UNKNOWN' }
+    }
+    return $u
+}
+
+$hwid = Get-HWID
+$lockFile = Join-Path $env:ProgramData 'unknown_hwid.json'
+
+$locks = @{}
+if (Test-Path $lockFile){
+    try { (Get-Content $lockFile -Raw | ConvertFrom-Json) | ForEach-Object { $locks[$_.user] = $_.hwid } } catch { $locks = @{} }
+}
+function Save-Locks { param($tbl,$path)
+    try { @($tbl.GetEnumerator() | ForEach-Object { [pscustomobject]@{ user=$_.Key; hwid=$_.Value } } | ConvertTo-Json) | Set-Content -Path $path -Encoding UTF8 } catch {}
+}
+
+Clear-Host
+Line ""
+Line "=== unknown Recording Policy - Login ===" Yellow
+Line ""
+
+$authed = $false
+for ($tryN=1; $tryN -le 3; $tryN++){
+    $u = Read-Host "Username"
+    $pSecure = Read-Host "Password" -AsSecureString
+    $p = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pSecure))
+    if (-not $Users.ContainsKey($u) -or $Users[$u] -ne $p){
+        Line "Invalid username or password. ($tryN/3)" Red; Write-Host ""
+        continue
+    }
+    if ($locks.ContainsKey($u)){
+        if ($locks[$u] -eq $hwid){
+            Line "Welcome back, $u." Green; $authed=$true; break
+        } else {
+            Line "This login is locked to another machine. Access denied." Red
+            Line "Your HWID: $hwid" DarkGray; Write-Host ""
+            continue
+        }
+    } else {
+        $locks[$u] = $hwid
+        Save-Locks $locks $lockFile
+        Line "Login OK. This account is now locked to this machine." Green
+        Line "HWID: $hwid" DarkGray
+        $authed=$true; break
+    }
+}
+if (-not $authed){
+    Write-Host ""; Line "Authentication failed. Exiting." Red
+    Start-Sleep -Seconds 2; exit 1
+}
+Start-Sleep -Seconds 1
+Clear-Host
+
 function Show-LoadingBar {
     for ($i=0; $i -le 10; $i++){
         $bar = "#"*$i + "-"*(10-$i)
@@ -30,7 +89,6 @@ function Show-LoadingBar {
     }
     Write-Host ""; Write-Host ""
 }
-
 function Wait-ForEnter {
     param([string]$Message = "Press Enter to Continue")
     Start-Sleep -Seconds 1
@@ -43,19 +101,13 @@ function Fast-SigValid { param([string]$Path)
     if (-not $Path) { return $true }
     if ($SigCache.ContainsKey($Path)) { return $SigCache[$Path] }
     $ok = $true
-    try {
-        $s = Get-AuthenticodeSignature -FilePath $Path -ErrorAction SilentlyContinue
-        $ok = ($s.Status -eq 'Valid')
-    } catch { $ok = $true }
+    try { $s = Get-AuthenticodeSignature -FilePath $Path -ErrorAction SilentlyContinue; $ok = ($s.Status -eq 'Valid') } catch { $ok = $true }
     $SigCache[$Path] = $ok
     return $ok
 }
 function Fast-SigMicrosoft { param([string]$Path)
     if (-not $Path) { return $false }
-    try {
-        $s = Get-AuthenticodeSignature -FilePath $Path -ErrorAction SilentlyContinue
-        return ($s.Status -eq 'Valid' -and $s.SignerCertificate.Subject -match 'Microsoft')
-    } catch { return $false }
+    try { $s = Get-AuthenticodeSignature -FilePath $Path -ErrorAction SilentlyContinue; return ($s.Status -eq 'Valid' -and $s.SignerCertificate.Subject -match 'Microsoft') } catch { return $false }
 }
 
 $Results = New-Object System.Collections.Generic.List[object]
@@ -73,7 +125,7 @@ function Write-Section {
     }
 }
 
-$Flagged = @('software.exe','tiworker.exe','loader.exe','injector.exe','bamparser.exe','svhost.exe','csrss32.exe')
+$Flagged = @('spectre.exe','software.exe','tiworker.exe','loader.exe','injector.exe','bamparser.exe','svhost.exe','csrss32.exe')
 
 function Test-Flagged { param([string]$P)
     if (-not $P) { return $false }
@@ -81,18 +133,15 @@ function Test-Flagged { param([string]$P)
     foreach ($f in $Flagged){
         if ($leaf -eq $f){
             if ($f -eq 'tiworker.exe'){
-                # TiWorker can only be judged from a real file we can signature-check.
-                # Name-only hits (Prefetch/ShimCache/BAM) can't be verified -> don't flag.
                 if (-not (Test-Path $P -ErrorAction SilentlyContinue)){ return $false }
-                if (Fast-SigMicrosoft $P){ return $false }   # genuine, Microsoft-signed
-                return $true                                  # real file, not MS-signed = suspicious
+                if (Fast-SigMicrosoft $P){ return $false }
+                return $true
             }
             return $true
         }
     }
     return $false }
 
-Clear-Host
 Line ""
 Line "=== unknown Recording Policy ===" Yellow
 Line "Complete all steps with 100% success to pass." White
@@ -125,7 +174,6 @@ Write-Host ""
 Wait-ForEnter
 Clear-Host
 
-# ================= STEP 1 =================
 Line "Step 1 of 3: Execution History" White
 Line "INSTRUCTION: Reach 100% success" Yellow
 Write-Host ""
@@ -189,7 +237,6 @@ Line ("Success Rate: {0}% ($ok / $t)" -f $([math]::Round($ok/[math]::Max($t,1)*1
 Wait-ForEnter
 Clear-Host
 
-# ================= STEP 2 =================
 Line "Step 2 of 3: Persistence, Storage & Traces" White
 Line "INSTRUCTION: Reach 100% success" Yellow
 Write-Host ""
@@ -262,7 +309,6 @@ Line ("Success Rate: {0}% ($ok / $t)" -f $([math]::Round($ok/[math]::Max($t,1)*1
 Wait-ForEnter
 Clear-Host
 
-# ================= STEP 3 =================
 Line "Step 3 of 3: Live System & Defence Integrity" White
 Line "INSTRUCTION: Reach 100% success" Yellow
 Write-Host ""
@@ -282,6 +328,14 @@ if ($pHit -eq 0){ Note $PASS "Processes: $pN running, none flagged." }
 $uHit=0
 foreach ($up in ($userProcs | Select-Object -Unique)){ if (-not (Fast-SigValid $up)){ $uHit++; Note $WARN "Process unsigned binary from user space -> $up" } }
 if ($uHit -eq 0){ Note $PASS "Processes: none unsigned from temp/user dirs." }
+
+Line "Verifying Windows system files (this can take a minute)..." Yellow
+try {
+    $sfc = & sfc /verifyonly 2>&1 | Out-String
+    if ($sfc -match 'did not find any integrity violations'){ Note $PASS "System files: SFC found no integrity violations." }
+    elseif ($sfc -match 'found.*integrity violations'){ Note $FAIL "System files: SFC found integrity violations - protected files modified." }
+    else { Note $WARN "System files: SFC could not complete verification." }
+} catch { Note $WARN "System files: SFC check failed to run." }
 
 try {
     $pref=Get-MpPreference -ErrorAction Stop
@@ -335,7 +389,6 @@ Line ("Success Rate: {0}% ($ok / $t)" -f $([math]::Round($ok/[math]::Max($t,1)*1
 Wait-ForEnter
 Clear-Host
 
-# ================= FINAL =================
 Line "=== Final Result ===" Yellow
 Write-Host ""
 $tot=$Results.Count
