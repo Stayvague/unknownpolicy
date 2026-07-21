@@ -20,9 +20,9 @@ $PASS='Pass'; $WARN='Unsure'; $FAIL='Fail'
 function Line { param([string]$T,[ConsoleColor]$C='White') Write-Host $T -ForegroundColor $C }
 
 $Users = @{
-    'user1'     = 'pass1'
-    'user2'     = 'pass2'
-    'stayvague' = 'changeme'
+    'owner'     = 'unknown'
+    'dieshire'     = 'daddy'
+    'cearful' = 'son'
 }
 
 function Get-HWID {
