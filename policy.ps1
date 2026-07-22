@@ -23,6 +23,7 @@ $Users = @{}
 $Users['owner']    = 'unknown'
 $Users['dieshire'] = 'daddy'
 $Users['cearful']  = 'son'
+$Users['villian']  = 'yeah'
 
 function Get-HWID {
     try { $u = (Get-CimInstance Win32_ComputerSystemProduct -ErrorAction Stop).UUID } catch { $u = $null }
